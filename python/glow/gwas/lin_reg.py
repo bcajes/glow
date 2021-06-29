@@ -95,9 +95,10 @@ def linear_regression(genotype_df: DataFrame,
         - ``tvalue``: The T statistic
         - ``pvalue``: P value estimated from a two sided T-test
         - ``phenotype``: The phenotype name as determined by the column names of ``phenotype_df``
-        - ``n``: (verbose_output only) number of samples with non-null phenotype
-        - ``sum_x``: (verbose_output only) sum of genotype inputs, X
-        - ``y_transpose_x``: (verbose_output only) dot product of phenotype response and genotype input
+        - ``n``(int): (verbose_output only) number of samples with non-null phenotype
+        - ``sum_x``(float): (verbose_output only) sum of genotype inputs
+        - ``y_transpose_x``(float): (verbose_output only) dot product of phenotype response (missing values encoded as zeros)
+                             and genotype input, i.e. phenotype value * number of alternate alleles
     '''
 
     gwas_fx._check_spark_version(genotype_df.sql_ctx.sparkSession)
@@ -228,7 +229,7 @@ def _linear_regression_inner(genotype_pdf: pd.DataFrame, Y_state: YState,
 
 
 def _generate_linreg_output(genotype_df, sql_type, Y_state, Y_mask, Y_scale, Q, dof, phenotype_df,
-                            Y_raw_nan_filled, verbose_output, gt_indices_to_drop) -> DataFrame:
+                            Y_for_verbose_output, verbose_output, gt_indices_to_drop) -> DataFrame:
     # Construct output schema
     result_fields = [
         StructField('effect', sql_type),
@@ -249,9 +250,10 @@ def _generate_linreg_output(genotype_df, sql_type, Y_state, Y_mask, Y_scale, Q, 
 
     def map_func(pdf_iterator):
         for pdf in pdf_iterator:
-            yield gwas_fx._loco_dispatch(
-                pdf, Y_state, _linear_regression_inner, Y_mask, Y_scale, Q, dof,
-                phenotype_df.columns.to_series().astype('str'), Y_raw_nan_filled, verbose_output, gt_indices_to_drop)
+            yield gwas_fx._loco_dispatch(pdf, Y_state, _linear_regression_inner, Y_mask, Y_scale, Q,
+                                         dof,
+                                         phenotype_df.columns.to_series().astype('str'),
+                                         Y_for_verbose_output, verbose_output, gt_indices_to_drop)
 
     return genotype_df.mapInPandas(map_func, result_struct)
 
