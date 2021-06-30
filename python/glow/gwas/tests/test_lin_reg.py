@@ -219,6 +219,7 @@ def test_missing_spark(spark, rg):
 def test_missing_and_intersect_samples_spark(spark, rg):
     num_samples = 10
     genotype_df = pd.DataFrame(rg.random((num_samples, 1)))
+    #here we're simulating dropping a sample from phenotypes and covariates
     phenotype_df = pd.DataFrame(rg.random((num_samples, 3)))[1:]
     phenotype_df.loc[[1, 3, 5], 1] = np.nan
     covariate_df = pd.DataFrame(rg.random((num_samples, 3)))[1:]
@@ -228,6 +229,7 @@ def test_missing_and_intersect_samples_spark(spark, rg):
                                       covariate_df,
                                       intersect_samples = True,
                                        genotype_sample_ids = genotype_df.index.values.astype(str).tolist())
+    #drop sample from genotypes so that input samples are aligned
     baseline = statsmodels_baseline(genotype_df[1:], phenotype_df, covariate_df)
     assert regression_results_equal(glow, baseline)
 

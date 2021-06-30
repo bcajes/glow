@@ -8,7 +8,7 @@ from pyspark.sql.types import StringType, StructField, IntegerType
 from scipy import stats
 from typeguard import typechecked
 from . import functions as gwas_fx
-from .functions import _VALUES_COLUMN_NAME
+from .functions import _VALUES_COLUMN_NAME, _get_indices_to_drop
 from ..wgr.wgr_functions import _get_contigs_from_loco_df
 
 __all__ = ['linear_regression']
@@ -257,10 +257,3 @@ def _generate_linreg_output(genotype_df, sql_type, Y_state, Y_mask, Y_scale, Q, 
 
     return genotype_df.mapInPandas(map_func, result_struct)
 
-def _get_indices_to_drop(phe_pdf, sample_ids):
-    drop_indices = []
-    phe_samples = set(phe_pdf.index.values.astype(str).tolist())
-    for i, s in enumerate(sample_ids):
-        if s not in phe_samples:
-            drop_indices.append(i)
-    return np.array(drop_indices)
