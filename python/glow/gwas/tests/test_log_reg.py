@@ -217,6 +217,35 @@ def test_missing_and_intersect_samples_spark(spark, rg):
 
 
 @pytest.mark.min_spark('3')
+def test_verbose_output_missing_and_intersect_samples_spark(spark, rg):
+    n_sample = 50
+    n_cov = 5
+    n_pheno = 5
+    genotype_df = pd.DataFrame(rg.random((n_sample, 1)))
+    #here we're simulating dropping a sample from phenotypes and covariates
+    phenotype_df = pd.DataFrame(random_phenotypes((n_sample, n_pheno), rg))[1:]
+    phenotype_df.loc[[1, 3, 5], 1] = np.nan
+    covariate_df = pd.DataFrame(rg.random((n_sample, n_cov)))[1:]
+    glow = run_logistic_regression_spark(
+        spark,
+        genotype_df,
+        phenotype_df,
+        covariate_df,
+        verbose_output=True,
+        intersect_samples=True,
+        genotype_sample_ids=genotype_df.index.values.astype(str).tolist())
+    #drop sample from genotypes so that input samples are aligned
+    genotype_df_w_removed_sample = genotype_df[1:]
+    baseline = statsmodels_baseline(genotype_df_w_removed_sample, phenotype_df, covariate_df)
+    assert glow.n.to_list() == [49, 46, 49, 49, 49]
+    assert np.allclose(glow.y_transpose_x.to_numpy(),
+                       np.nan_to_num(phenotype_df.to_numpy().T) @ genotype_df_w_removed_sample[0].array)
+    assert np.allclose(glow.sum_x.to_numpy(),
+                       (~np.isnan(phenotype_df.to_numpy())).T @ genotype_df_w_removed_sample[0].array)
+    assert regression_results_equal(glow.drop(["n","sum_x","y_transpose_x"], axis=1), baseline)
+
+
+@pytest.mark.min_spark('3')
 def test_spark_no_intercept(spark, rg):
     n_sample = 50
     n_cov = 5
