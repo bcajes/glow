@@ -29,7 +29,7 @@ def run_score_test(genotype_df,
     values_df = pd.DataFrame({gwas_fx._VALUES_COLUMN_NAME: list(genotype_df.to_numpy().T)})
     return lr._logistic_regression_inner(values_df, state, C, Y, Y_mask, None, lr.correction_none,
                                          0.05,
-                                         phenotype_df.columns.to_series().astype('str'), None)
+                                         phenotype_df.columns.to_series().astype('str'), None, None, None)
 
 
 def statsmodels_baseline(genotype_df,

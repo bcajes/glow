@@ -1,4 +1,4 @@
-from pyspark.sql.types import ArrayType, BooleanType, StringType, StructField, DataType, StructType
+from pyspark.sql.types import ArrayType, BooleanType, StringType, StructField, DataType, StructType, IntegerType
 from typing import Any, List, Optional, Dict, Union
 import pandas as pd
 import numpy as np
@@ -31,6 +31,7 @@ def logistic_regression(genotype_df: DataFrame,
                         add_intercept: bool = True,
                         values_column: str = 'values',
                         dt: type = np.float64,
+                        verbose_output: bool = False,
                         intersect_samples: bool = False,
                         genotype_sample_ids: Optional[List[str]] = None) -> DataFrame:
     '''
@@ -75,6 +76,10 @@ def logistic_regression(genotype_df: DataFrame,
                         ``genotype_df`` should have a column with this name and a numeric array type. If a column expression
                         is provided, the expression should return a numeric array type.
         dt : The numpy datatype to use in the linear regression test. Must be ``np.float32`` or ``np.float64``.
+        verbose_output: Whether or not to generate additional test statistics (n, sum_x, y_transpose_x)
+                        to the output DataFrame.  These values are derived directly from phenotype_df and genotype_df,
+                        and does not reflect any standardization performed as part of the implementation of
+                        logistic_regression.
 
     Returns:
         A Spark DataFrame that contains
@@ -112,6 +117,13 @@ def logistic_regression(genotype_df: DataFrame,
             f"Only supported correction methods are '{correction_none}' and '{correction_approx_firth}'"
         )
 
+    if verbose_output:
+        result_fields += ([
+            StructField('n', IntegerType()),
+            StructField('sum_x', sql_type),
+            StructField('y_transpose_x', sql_type)
+        ])
+
     result_struct = gwas_fx._output_schema(genotype_df.schema.fields, result_fields)
 
     gt_indices_to_drop = None
@@ -128,8 +140,8 @@ def logistic_regression(genotype_df: DataFrame,
         C = gwas_fx._add_intercept(C, phenotype_df.shape[0])
     Y = phenotype_df.to_numpy(dt, copy=True)
     Y_mask = ~(np.isnan(Y))
-    np.nan_to_num(Y, copy=False)
-
+    Y = np.nan_to_num(Y, copy=False)
+    Y_for_verbose_output = np.copy(Y) if verbose_output else None
     if correction == correction_approx_firth:
         Q = np.linalg.qr(C)[0]
     else:
@@ -144,7 +156,7 @@ def logistic_regression(genotype_df: DataFrame,
         for pdf in pdf_iterator:
             yield gwas_fx._loco_dispatch(pdf, state, _logistic_regression_inner, C, Y, Y_mask, Q,
                                          correction, pvalue_threshold, phenotype_names,
-                                         gt_indices_to_drop)
+                                         Y_for_verbose_output, verbose_output, gt_indices_to_drop)
 
     return genotype_df.mapInPandas(map_func, result_struct)
 
@@ -290,7 +302,8 @@ def _logistic_regression_inner(
         genotype_pdf: pd.DataFrame, log_reg_state: LogRegState, C: NDArray[(Any, Any), Float],
         Y: NDArray[(Any, Any), Float], Y_mask: NDArray[(Any, Any), bool],
         Q: Optional[NDArray[(Any, Any), Float]], correction: str, pvalue_threshold: float,
-        phenotype_names: pd.Series, gt_indices_to_drop: Optional[NDArray[(Any, ),
+        phenotype_names: pd.Series, Y_for_verbose_output: Optional[NDArray[(Any, Any),Float]],
+        verbose_output: Optional[bool], gt_indices_to_drop: Optional[NDArray[(Any, ),
                                                                          Int32]]) -> pd.DataFrame:
     '''
     Tests a block of genotypes for association with binary traits. We first residualize
@@ -308,6 +321,14 @@ def _logistic_regression_inner(
         genotype_values = list(map(lambda x: np.delete(x, gt_indices_to_drop), genotype_values))
     X = np.column_stack(genotype_values)
 
+    del genotype_pdf[_VALUES_COLUMN_NAME]
+    out_df = pd.concat([genotype_pdf] * log_reg_state.Y_res.shape[1])
+    num_genotypes = genotype_pdf.shape[0]
+    if verbose_output:
+        out_df["n"] = list(Y_mask.sum(axis=0).repeat(num_genotypes))
+        out_df["sum_x"] = list(np.ravel(Y_mask.T @ X))
+        out_df["y_transpose_x"] = list(np.ravel(Y_for_verbose_output.T @ X))
+
     # For approximate Firth correction, we perform a linear residualization
     if correction == correction_approx_firth:
         X = gwas_fx._residualize_in_place(X, Q)
@@ -319,8 +340,6 @@ def _logistic_regression_inner(
     chisq = np.ravel(num / denom)
     p_values = stats.chi2.sf(chisq, 1)
 
-    del genotype_pdf[_VALUES_COLUMN_NAME]
-    out_df = pd.concat([genotype_pdf] * log_reg_state.Y_res.shape[1])
     out_df['chisq'] = list(np.ravel(chisq))
     out_df['pvalue'] = list(np.ravel(p_values))
     out_df['phenotype'] = phenotype_names.repeat(genotype_pdf.shape[0]).tolist()

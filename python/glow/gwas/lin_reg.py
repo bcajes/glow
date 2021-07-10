@@ -180,7 +180,7 @@ def _create_one_YState(Y: NDArray[(Any, Any), Float], phenotype_df: pd.DataFrame
 def _linear_regression_inner(genotype_pdf: pd.DataFrame, Y_state: YState,
                              Y_mask: NDArray[(Any, Any), Float], Y_scale: NDArray[(Any, ), Float],
                              Q: NDArray[(Any, Any), Float], dof: int, phenotype_names: pd.Series,
-                             Y_raw: Optional[NDArray[(Any, Any),
+                             Y_for_verbose_output: Optional[NDArray[(Any, Any),
                                                      Float]], verbose_output: Optional[bool],
                              gt_indices_to_drop: Optional[NDArray[(Any, ), Int32]]) -> pd.DataFrame:
     '''
@@ -209,7 +209,7 @@ def _linear_regression_inner(genotype_pdf: pd.DataFrame, Y_state: YState,
     if verbose_output:
         out_df["n"] = list(np.ravel(Y_mask.T @ np.ones(X.shape)))
         out_df["sum_x"] = list(np.ravel(Y_mask.T @ X))
-        out_df["y_transpose_x"] = list(np.ravel(Y_raw.T @ X))
+        out_df["y_transpose_x"] = list(np.ravel(Y_for_verbose_output.T @ X))
     X = gwas_fx._residualize_in_place(X, Q)
 
     XdotY = Y_state.Y.T @ X
