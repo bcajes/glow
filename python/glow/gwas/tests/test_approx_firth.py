@@ -1,3 +1,4 @@
+import sys
 from dataclasses import dataclass
 import functions as fx
 import glow.gwas.log_reg as lr
@@ -117,7 +118,9 @@ def compare_corrections_to_regenie(spark,
                                    compare_all_cols,
                                    uncorrected,
                                    corrected,
-                                   missing=[]):
+                                   missing=[],
+                                   verbose_output=False,
+                                   y_transpose_x_thresholds=(0,sys.maxsize)):
 
     (genotype_df, phenotype_df, covariate_df, offset_df) = fx.get_input_dfs(spark,
                                                                             binary=True,
@@ -128,7 +131,9 @@ def compare_corrections_to_regenie(spark,
                                        offset_df,
                                        correction=lr.correction_approx_firth,
                                        pvalue_threshold=pvalue_threshold,
-                                       values_column='values').toPandas()
+                                       values_column='values',
+                                       verbose_output=verbose_output,
+                                       y_transpose_x_thresholds=y_transpose_x_thresholds).toPandas()
     fx.compare_to_regenie(output_prefix, glowgr_df, compare_all_cols)
 
     correction_counts = glowgr_df.correctionSucceeded.value_counts(dropna=False).to_dict()
@@ -172,3 +177,29 @@ def test_correct_missing_versus_regenie(spark):
         uncorrected=0,
         corrected=200,
         missing=['35_35', '136_136', '77_77', '100_100', '204_204', '474_474'])
+
+
+@pytest.mark.min_spark('3')
+def test_correct_missing_versus_regenie_with_verbose_output(spark):
+    compare_corrections_to_regenie(
+        spark,
+        0.9999,
+        'test_bin_out_missing_firth_',
+        compare_all_cols=True,
+        uncorrected=0,
+        corrected=200,
+        missing=['35_35', '136_136', '77_77', '100_100', '204_204', '474_474'],
+        verbose_output=True)
+
+@pytest.mark.min_spark('3')
+def test_correct_missing_versus_regenie_with_verbose_output_and_transpose_threshold(spark):
+    compare_corrections_to_regenie(
+        spark,
+        0.9999,
+        'test_bin_out_missing_firth_',
+        compare_all_cols=True,
+        uncorrected=200,
+        corrected=0,
+        missing=['35_35', '136_136', '77_77', '100_100', '204_204', '474_474'],
+        verbose_output=True,
+        y_transpose_x_thresholds=(sys.maxsize,sys.maxsize))

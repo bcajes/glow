@@ -162,10 +162,11 @@ def perform_null_firth_fit(
         b0_null_fit[0] = (0.5 + masked_y.sum()) / (mask.sum() + 1)
         b0_null_fit[0] = np.log(b0_null_fit[0] / (1 - b0_null_fit[0])) - masked_offset.mean()
     firth_fit_result = _fit_firth(b0_null_fit, masked_C, masked_y, masked_offset)
-    if firth_fit_result is None:
-        raise ValueError("Null fit failed!")
-    firth_offset[mask] = masked_offset + masked_C @ firth_fit_result.beta
-
+    #from pdb_clone import pdb;pdb.set_trace_remote()
+    if firth_fit_result is not None:
+        firth_offset[mask] = masked_offset + masked_C @ firth_fit_result.beta
+    else:
+        firth_offset = None
     return firth_offset
 
 

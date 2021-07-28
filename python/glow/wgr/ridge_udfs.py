@@ -142,7 +142,6 @@ def map_normal_eqn(key: Tuple, key_pattern: List[str], pdf: pd.DataFrame, labeld
         'xtx': list(XtX),
         'xty': list(XtY)
     }
-
     return pd.DataFrame(data)
 
 
