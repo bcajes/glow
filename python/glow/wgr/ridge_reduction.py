@@ -126,17 +126,21 @@ class RidgeReduction:
             reduce_key_pattern.append('label')
         for label in self._std_label_df.columns:
             drop_na_label_df = self._label_df[[label]].dropna()
-            drop_na_std_label_df = self._std_label_df[[label]].reindex(drop_na_label_df.index)
-            drop_na_std_cov_df = self._std_cov_df.reindex(drop_na_std_label_df.index)
+            na_std_label_df = self._std_label_df[[label]].reindex(drop_na_label_df.index).reindex(self._label_df.index)
+            std_cov_df = self._std_cov_df.reindex(na_std_label_df.index)
+            maskdf = pd.DataFrame(data=np.where(np.isnan(na_std_label_df), False, True),
+                                  columns=na_std_label_df.columns,
+                                  index=na_std_label_df.index)
+            #from pdb_clone import pdb; pdb.set_trace_remote()
             map_udf = pandas_udf(
-                lambda key, pdf: map_normal_eqn(key, map_key_pattern, pdf, drop_na_std_label_df, self.
-                                                sample_blocks, drop_na_std_cov_df), normal_eqn_struct,
+                lambda key, pdf: map_normal_eqn(key, map_key_pattern, pdf, na_std_label_df, self.
+                                                sample_blocks, std_cov_df, maskdf), normal_eqn_struct,
                 PandasUDFType.GROUPED_MAP)
             reduce_udf = pandas_udf(lambda key, pdf: reduce_normal_eqn(key, reduce_key_pattern, pdf),
                                     normal_eqn_struct, PandasUDFType.GROUPED_MAP)
             model_udf = pandas_udf(
-                lambda key, pdf: solve_normal_eqn(key, map_key_pattern, pdf, drop_na_std_label_df, self.
-                                                  _alphas, drop_na_std_cov_df), model_struct,
+                lambda key, pdf: solve_normal_eqn(key, map_key_pattern, pdf, na_std_label_df, self.
+                                                  _alphas, std_cov_df), model_struct,
                 PandasUDFType.GROUPED_MAP)
 
             model_dfs.append(self.block_df.groupBy(map_key_pattern).apply(map_udf).groupBy(
@@ -173,7 +177,6 @@ class RidgeReduction:
             .withColumn("coefficients", get_target_array(2, ArrayType(DoubleType()))("array_zip"))\
             .drop("array_zip")\
             .orderBy(['sort_key', 'header'])
-        #from pdb_clone import pdb; pdb.set_trace_remote()
         return self.model_df
 
     def transform(self) -> DataFrame:
