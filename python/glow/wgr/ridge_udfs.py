@@ -326,8 +326,8 @@ def apply_model(key: Tuple, key_pattern: List[str], pdf: pd.DataFrame, labeldf: 
         n_cols = len(pdf[~pdf['values'].isnull()])
         cov_matrix = slice_label_rows(covdf, 'all', sample_list, np.array([]))
         X = assemble_block(n_rows, n_cols, pdf[~pdf['values'].isnull()], cov_matrix, np.array([]))
-
     B = np.row_stack(pdf['coefficients'].array)
+    #X => blocks derived from genotype data, B => derived from Genotype and Phenotype Data
     XB = X @ B
     mu, sig = XB.mean(axis=0), XB.std(axis=0)
     alpha_names = sorted(alphas.keys())
@@ -347,7 +347,6 @@ def apply_model(key: Tuple, key_pattern: List[str], pdf: pd.DataFrame, labeldf: 
         'alpha': alpha_col,
         'label': label_col
     }
-
     return pd.DataFrame(data)
 
 
