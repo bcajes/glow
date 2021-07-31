@@ -1,5 +1,6 @@
+import sys
 from pyspark.sql.types import ArrayType, BooleanType, StringType, StructField, DataType, StructType, IntegerType
-from typing import Any, List, Optional, Dict, Union
+from typing import Any, List, Optional, Dict, Union, Tuple
 import pandas as pd
 import numpy as np
 from pyspark.sql import DataFrame, SparkSession
@@ -33,7 +34,8 @@ def logistic_regression(genotype_df: DataFrame,
                         dt: type = np.float64,
                         verbose_output: bool = False,
                         intersect_samples: bool = False,
-                        genotype_sample_ids: Optional[List[str]] = None) -> DataFrame:
+                        genotype_sample_ids: Optional[List[str]] = None,
+                        y_transpose_x_thresholds: Tuple[int, int] = (0,sys.maxsize)) -> DataFrame:
     '''
     Uses logistic regression to test for association between genotypes and one or more binary
     phenotypes. This is a distributed version of the method from regenie:
@@ -156,7 +158,8 @@ def logistic_regression(genotype_df: DataFrame,
         for pdf in pdf_iterator:
             yield gwas_fx._loco_dispatch(pdf, state, _logistic_regression_inner, C, Y, Y_mask, Q,
                                          correction, pvalue_threshold, phenotype_names,
-                                         Y_for_verbose_output, verbose_output, gt_indices_to_drop)
+                                         Y_for_verbose_output, verbose_output, gt_indices_to_drop,
+                                         y_transpose_x_thresholds)
 
     return genotype_df.mapInPandas(map_func, result_struct)
 
@@ -303,8 +306,8 @@ def _logistic_regression_inner(
         Y: NDArray[(Any, Any), Float], Y_mask: NDArray[(Any, Any), bool],
         Q: Optional[NDArray[(Any, Any), Float]], correction: str, pvalue_threshold: float,
         phenotype_names: pd.Series, Y_for_verbose_output: Optional[NDArray[(Any, Any),Float]],
-        verbose_output: Optional[bool], gt_indices_to_drop: Optional[NDArray[(Any, ),
-                                                                         Int32]]) -> pd.DataFrame:
+        verbose_output: Optional[bool], gt_indices_to_drop: Optional[NDArray[(Any, ), Int32]],
+        y_transpose_x_thresholds: Tuple[int, int]) -> pd.DataFrame:
     '''
     Tests a block of genotypes for association with binary traits. We first residualize
     the genotypes based on the null model fit, then perform a fast score test to check for
@@ -346,7 +349,12 @@ def _logistic_regression_inner(
 
     if correction != correction_none:
         out_df['correctionSucceeded'] = None
-        correction_indices = list(np.where(out_df['pvalue'] < pvalue_threshold)[0])
+        correction_indices = (list(
+            np.where((out_df['pvalue'] < pvalue_threshold) & \
+                     (out_df['y_transpose_x'] > y_transpose_x_thresholds[0]) & \
+                     (out_df['y_transpose_x'] < y_transpose_x_thresholds[1]) )[0]
+        ) if verbose_output else list(np.where(out_df['pvalue'] < pvalue_threshold)[0]))
+        #from pdb_clone import pdb;pdb.set_trace_remote()
         if correction == correction_approx_firth:
             out_df['effect'] = np.nan
             out_df['stderror'] = np.nan
