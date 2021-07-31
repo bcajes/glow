@@ -127,11 +127,10 @@ class RidgeReduction:
         for label in self._std_label_df.columns:
             drop_na_label_df = self._label_df[[label]].dropna()
             na_std_label_df = self._std_label_df[[label]].reindex(drop_na_label_df.index).reindex(self._label_df.index)
-            std_cov_df = self._std_cov_df.reindex(na_std_label_df.index)
+            std_cov_df = self._std_cov_df.reindex(drop_na_label_df.index).reindex(self._label_df.index)
             maskdf = pd.DataFrame(data=np.where(np.isnan(na_std_label_df), False, True),
                                   columns=na_std_label_df.columns,
                                   index=na_std_label_df.index)
-            #from pdb_clone import pdb; pdb.set_trace_remote()
             map_udf = pandas_udf(
                 lambda key, pdf: map_normal_eqn(key, map_key_pattern, pdf, na_std_label_df, self.
                                                 sample_blocks, std_cov_df, maskdf), normal_eqn_struct,
@@ -151,7 +150,7 @@ class RidgeReduction:
         grouped = reduced.groupBy(['header_block', 'sample_block', 'header',"sort_key"])\
             .agg(collect_list("alphas").alias("alphas"), collect_list("labels").alias("labels"),
                  collect_list("coefficients").alias("coefficients"))
-        label_index = dict(map(lambda t: (t[1],t[0]), enumerate(self._std_label_df.columns.tolist())))
+        label_index = dict(map(lambda t: (t[1], t[0]), enumerate(self._std_label_df.columns.tolist())))
         label_index_bc = grouped.sql_ctx.sparkSession.sparkContext.broadcast(label_index)
         def sort_zip_array(zipped_arr):
             #expecting tupple elements to correspond to 0 => alphas, 1 => labels, 2 => coefficients
@@ -177,6 +176,7 @@ class RidgeReduction:
             .withColumn("coefficients", get_target_array(2, ArrayType(DoubleType()))("array_zip"))\
             .drop("array_zip")\
             .orderBy(['sort_key', 'header'])
+        #from pdb_clone import pdb;pdb.set_trace_remote()
         return self.model_df
 
     def transform(self) -> DataFrame:
