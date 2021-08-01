@@ -164,6 +164,7 @@ def perform_null_firth_fit(
     firth_fit_result = _fit_firth(b0_null_fit, masked_C, masked_y, masked_offset, max_iter=2000)
     if firth_fit_result is None:
         #attempt retry with parameters than increase chance of convergence, if default params fails
+        #see https://rgcgithub.github.io/regenie/faq/#step-2
         firth_fit_result = _fit_firth(b0_null_fit, masked_C, masked_y, masked_offset,
         convergence_limit=0.001, max_step_size=1, max_iter=5000)
         if firth_fit_result is None:
