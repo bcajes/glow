@@ -211,8 +211,9 @@ def _prepare_one_phenotype(C: NDArray[(Any, Any), Float], row: pd.Series, correc
     row['y_res'], row['gamma'], row['inv_CtGammaC'] = np.ravel(y_res), np.ravel(gamma), np.ravel(
         inv_CtGammaC)
     if correction == correction_approx_firth:
-        row['firth_offset'] = np.ravel(
-            af.perform_null_firth_fit(y, C, mask, offset, includes_intercept))
+        null_fit_res = af.perform_null_firth_fit(y, C, mask, offset, includes_intercept)
+        if null_fit_res is not None:
+            row['firth_offset'] = np.ravel(null_fit_res)
     return row
 
 

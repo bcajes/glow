@@ -11,13 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import functools
 
 from .ridge_udfs import *
 from .model_functions import _is_binary, _prepare_covariates, _prepare_labels_and_warn, _check_model
 from nptyping import Float, NDArray
 import pandas as pd
 from pyspark.sql import DataFrame, Row
-from pyspark.sql.functions import pandas_udf, PandasUDFType
+from pyspark.sql.functions import pandas_udf, PandasUDFType, collect_list, flatten, arrays_zip, array_sort, udf
 import pyspark.sql.functions as f
 from typeguard import typechecked
 from typing import Any, Dict, List, Union
@@ -119,27 +120,63 @@ class RidgeReduction:
 
         map_key_pattern = ['header_block', 'sample_block']
         reduce_key_pattern = ['header_block', 'header']
-
+        model_dfs = []
         if 'label' in self.block_df.columns:
             map_key_pattern.append('label')
             reduce_key_pattern.append('label')
+        for label in self._std_label_df.columns:
+            drop_na_label_df = self._label_df[[label]].dropna()
+            na_std_label_df = self._std_label_df[[label]].reindex(drop_na_label_df.index).reindex(self._label_df.index)
+            std_cov_df = self._std_cov_df.reindex(na_std_label_df.index)
+            maskdf = pd.DataFrame(data=np.where(np.isnan(na_std_label_df), False, True),
+                                  columns=na_std_label_df.columns,
+                                  index=na_std_label_df.index)
+            #from pdb_clone import pdb; pdb.set_trace_remote()
+            map_udf = pandas_udf(
+                lambda key, pdf: map_normal_eqn(key, map_key_pattern, pdf, na_std_label_df, self.
+                                                sample_blocks, std_cov_df, maskdf), normal_eqn_struct,
+                PandasUDFType.GROUPED_MAP)
+            reduce_udf = pandas_udf(lambda key, pdf: reduce_normal_eqn(key, reduce_key_pattern, pdf),
+                                    normal_eqn_struct, PandasUDFType.GROUPED_MAP)
+            model_udf = pandas_udf(
+                lambda key, pdf: solve_normal_eqn(key, map_key_pattern, pdf, na_std_label_df, self.
+                                                  _alphas, std_cov_df), model_struct,
+                PandasUDFType.GROUPED_MAP)
 
-        map_udf = pandas_udf(
-            lambda key, pdf: map_normal_eqn(key, map_key_pattern, pdf, self._std_label_df, self.
-                                            sample_blocks, self._std_cov_df), normal_eqn_struct,
-            PandasUDFType.GROUPED_MAP)
-        reduce_udf = pandas_udf(lambda key, pdf: reduce_normal_eqn(key, reduce_key_pattern, pdf),
-                                normal_eqn_struct, PandasUDFType.GROUPED_MAP)
-        model_udf = pandas_udf(
-            lambda key, pdf: solve_normal_eqn(key, map_key_pattern, pdf, self._std_label_df, self.
-                                              _alphas, self._std_cov_df), model_struct,
-            PandasUDFType.GROUPED_MAP)
+            model_dfs.append(self.block_df.groupBy(map_key_pattern).apply(map_udf).groupBy(
+                reduce_key_pattern).apply(reduce_udf).groupBy(map_key_pattern).apply(model_udf))
 
         record_hls_event('wgrRidgeReduceFit')
-
-        self.model_df = self.block_df.groupBy(map_key_pattern).apply(map_udf).groupBy(
-            reduce_key_pattern).apply(reduce_udf).groupBy(map_key_pattern).apply(model_udf)
-
+        reduced = functools.reduce(lambda a,b: a.union(b), model_dfs)
+        grouped = reduced.groupBy(['header_block', 'sample_block', 'header',"sort_key"])\
+            .agg(collect_list("alphas").alias("alphas"), collect_list("labels").alias("labels"),
+                 collect_list("coefficients").alias("coefficients"))
+        label_index = dict(map(lambda t: (t[1],t[0]), enumerate(self._std_label_df.columns.tolist())))
+        label_index_bc = grouped.sql_ctx.sparkSession.sparkContext.broadcast(label_index)
+        def sort_zip_array(zipped_arr):
+            #expecting tupple elements to correspond to 0 => alphas, 1 => labels, 2 => coefficients
+            _label_index = label_index_bc.value
+            sorted_zipped_arr = sorted(zipped_arr, key=lambda t: (t[0], _label_index[t[1]]))
+            return sorted_zipped_arr
+        sort_zip_array_udf = udf(sort_zip_array, ArrayType(StructType([
+            StructField("alphas", StringType(), False),
+            StructField("labels", StringType(), False),
+            StructField("coefficients", DoubleType(), False)
+        ])))
+        def get_target_array(pos, df_type):
+            def _get_target_array(array_zip):
+                target_array = list(map(lambda a: a[pos], array_zip))
+                return target_array
+            return udf(_get_target_array, df_type)
+        self.model_df = grouped.withColumn("alphas", flatten("alphas")) \
+            .withColumn("labels", flatten("labels")) \
+            .withColumn("coefficients", flatten("coefficients")) \
+            .withColumn("array_zip", sort_zip_array_udf(arrays_zip("alphas","labels","coefficients")))\
+            .withColumn("alphas", get_target_array(0, ArrayType(StringType()))("array_zip"))\
+            .withColumn("labels", get_target_array(1, ArrayType(StringType()))("array_zip"))\
+            .withColumn("coefficients", get_target_array(2, ArrayType(DoubleType()))("array_zip"))\
+            .drop("array_zip")\
+            .orderBy(['sort_key', 'header'])
         return self.model_df
 
     def transform(self) -> DataFrame:
@@ -163,6 +200,7 @@ class RidgeReduction:
             joined = self.block_df.drop('sort_key') \
                 .join(self.model_df, ['header_block', 'sample_block', 'header'], 'right')
 
+        #Here label df will only be used for indexing
         transform_udf = pandas_udf(
             lambda key, pdf: apply_model(key, transform_key_pattern, pdf, self._std_label_df, self.
                                          sample_blocks, self._alphas, self._std_cov_df),

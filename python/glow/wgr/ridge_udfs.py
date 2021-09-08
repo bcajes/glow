@@ -65,7 +65,8 @@ cv_struct = StructType([
 
 @typechecked
 def map_normal_eqn(key: Tuple, key_pattern: List[str], pdf: pd.DataFrame, labeldf: pd.DataFrame,
-                   sample_index: Dict[str, List[str]], covdf: pd.DataFrame) -> pd.DataFrame:
+                   sample_index: Dict[str, List[str]], covdf: pd.DataFrame,
+                   maskdf: pd.DataFrame = None) -> pd.DataFrame:
     """
     This function constructs matrices X and Y, and returns X_transpose * X (XtX) and X_transpose * Y (XtY), where X
     corresponds to a block from a block matrix.
@@ -116,20 +117,25 @@ def map_normal_eqn(key: Tuple, key_pattern: List[str], pdf: pd.DataFrame, labeld
     n_rows = pdf['size'][0]
     n_cols = len(pdf)
     sample_list = sample_index[sample_block]
-
+    if maskdf is not None:
+        block_mask = maskdf.loc[sample_list,:]
+        row_mask = slice_label_rows(block_mask, labeldf.columns[0], sample_list,
+                                                np.array([])).ravel()
+    else:
+        row_mask = np.array([])
     if covdf.empty:
         header_col = pdf['header']
         sort_key_col = pdf['sort_key']
         X = assemble_block(n_rows, n_cols, pdf, np.array([]), np.array([]))
     else:
-        cov_matrix = slice_label_rows(covdf, 'all', sample_list, np.array([]))
+        cov_matrix = slice_label_rows(covdf, "all", sample_list, np.array([]))
         n_cov = len(covdf.columns)
         header_col = np.concatenate([covdf.columns, pdf['header']])
         #Add new sort_keys for covariates, starting from -n_cov up to 0 to ensure they come ahead of the headers.
         sort_key_col = np.concatenate((np.arange(-n_cov, 0), pdf['sort_key']))
-        X = assemble_block(n_rows, n_cols, pdf, cov_matrix, np.array([]))
+        X = assemble_block(n_rows, n_cols, pdf, cov_matrix, row_mask)
 
-    Y = slice_label_rows(labeldf, label, sample_list, np.array([]))
+    Y = slice_label_rows(labeldf, label, sample_list, row_mask)
     XtX = X.T @ X
     XtY = X.T @ Y
 
@@ -142,7 +148,6 @@ def map_normal_eqn(key: Tuple, key_pattern: List[str], pdf: pd.DataFrame, labeld
         'xtx': list(XtX),
         'xty': list(XtY)
     }
-
     return pd.DataFrame(data)
 
 
@@ -327,8 +332,8 @@ def apply_model(key: Tuple, key_pattern: List[str], pdf: pd.DataFrame, labeldf: 
         n_cols = len(pdf[~pdf['values'].isnull()])
         cov_matrix = slice_label_rows(covdf, 'all', sample_list, np.array([]))
         X = assemble_block(n_rows, n_cols, pdf[~pdf['values'].isnull()], cov_matrix, np.array([]))
-
     B = np.row_stack(pdf['coefficients'].array)
+    #X => blocks derived from genotype data, B => derived from Genotype and Phenotype Data
     XB = X @ B
     mu, sig = XB.mean(axis=0), XB.std(axis=0)
     alpha_names = sorted(alphas.keys())
@@ -348,7 +353,6 @@ def apply_model(key: Tuple, key_pattern: List[str], pdf: pd.DataFrame, labeldf: 
         'alpha': alpha_col,
         'label': label_col
     }
-
     return pd.DataFrame(data)
 
 
