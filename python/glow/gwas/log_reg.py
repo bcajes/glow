@@ -352,8 +352,8 @@ def _logistic_regression_inner(
         out_df['correctionSucceeded'] = None
         correction_indices = (list(
             np.where((out_df['pvalue'] < pvalue_threshold) & \
-                     (out_df['y_transpose_x'] > y_transpose_x_thresholds[0]) & \
-                     (out_df['y_transpose_x'] < y_transpose_x_thresholds[1]) )[0]
+                     (out_df['y_transpose_x'] >= y_transpose_x_thresholds[0]) & \
+                     (out_df['y_transpose_x'] <= y_transpose_x_thresholds[1]) )[0]
         ) if verbose_output else list(np.where(out_df['pvalue'] < pvalue_threshold)[0]))
         #from pdb_clone import pdb;pdb.set_trace_remote()
         if correction == correction_approx_firth:
