@@ -97,8 +97,9 @@ def linear_regression(genotype_df: DataFrame,
         - ``phenotype``: The phenotype name as determined by the column names of ``phenotype_df``
         - ``n``(int): (verbose_output only) number of samples with non-null phenotype
         - ``sum_x``(float): (verbose_output only) sum of genotype inputs
-        - ``y_transpose_x``(float): (verbose_output only) dot product of phenotype response (missing values encoded as zeros)
-                             and genotype input, i.e. phenotype value * number of alternate alleles
+        - ``sum_y``(float): (verbose_output only) sum of phenotype inputs
+        - ``y_transpose_x``(float): (verbose_output only) dot product of phenotype response (missing values encoded
+                             as zeros) and genotype input, i.e. phenotype value * number of alternate alleles
     '''
 
     gwas_fx._check_spark_version(genotype_df.sql_ctx.sparkSession)
@@ -209,6 +210,7 @@ def _linear_regression_inner(genotype_pdf: pd.DataFrame, Y_state: YState,
     if verbose_output:
         out_df["n"] = list(np.ravel(Y_mask.T @ np.ones(X.shape)))
         out_df["sum_x"] = list(np.ravel(Y_mask.T @ X))
+        out_df["sum_y"] = list(np.ravel(Y_for_verbose_output.T @ np.ones(X.shape)))
         out_df["y_transpose_x"] = list(np.ravel(Y_for_verbose_output.T @ X))
     X = gwas_fx._residualize_in_place(X, Q)
 
@@ -244,6 +246,7 @@ def _generate_linreg_output(genotype_df, sql_type, Y_state, Y_mask, Y_scale, Q, 
         result_fields += ([
             StructField('n', IntegerType()),
             StructField('sum_x', sql_type),
+            StructField('sum_y', sql_type),
             StructField('y_transpose_x', sql_type)
         ])
 

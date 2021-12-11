@@ -94,6 +94,11 @@ def logistic_regression(genotype_df: DataFrame,
         - ``chisq``: The chi squared test statistic according to the score test or the correction method
         - ``pvalue``: p-value estimated from the test statistic
         - ``phenotype``: The phenotype name as determined by the column names of ``phenotype_df``
+        - ``n``(int): (verbose_output only) number of samples with non-null phenotype
+        - ``sum_x``(float): (verbose_output only) sum of genotype inputs
+        - ``sum_y``(float): (verbose_output only) sum of phenotype inputs
+        - ``y_transpose_x``(float): (verbose_output only) dot product of phenotype response (missing values encoded
+                             as zeros) and genotype input, i.e. phenotype value * number of alternate alleles
     '''
 
     spark = genotype_df.sql_ctx.sparkSession
@@ -123,6 +128,7 @@ def logistic_regression(genotype_df: DataFrame,
         result_fields += ([
             StructField('n', IntegerType()),
             StructField('sum_x', sql_type),
+            StructField('sum_y', sql_type),
             StructField('y_transpose_x', sql_type)
         ])
 
@@ -329,8 +335,9 @@ def _logistic_regression_inner(
     out_df = pd.concat([genotype_pdf] * log_reg_state.Y_res.shape[1])
     num_genotypes = genotype_pdf.shape[0]
     if verbose_output:
-        out_df["n"] = list(Y_mask.sum(axis=0).repeat(num_genotypes))
+        out_df["n"] = list(np.ravel(Y_mask.T @ np.ones(X.shape)))
         out_df["sum_x"] = list(np.ravel(Y_mask.T @ X))
+        out_df["sum_y"] = list(np.ravel(Y_for_verbose_output.T @ np.ones(X.shape)))
         out_df["y_transpose_x"] = list(np.ravel(Y_for_verbose_output.T @ X))
 
     # For approximate Firth correction, we perform a linear residualization
