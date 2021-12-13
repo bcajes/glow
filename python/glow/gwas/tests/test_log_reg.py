@@ -237,12 +237,13 @@ def test_verbose_output_missing_and_intersect_samples_spark(spark, rg):
     #drop sample from genotypes so that input samples are aligned
     genotype_df_w_removed_sample = genotype_df[1:]
     baseline = statsmodels_baseline(genotype_df_w_removed_sample, phenotype_df, covariate_df)
+    assert regression_results_equal(glow.drop(columns=["n", "sum_x", "sum_y", "y_transpose_x"]), baseline)
     assert glow.n.to_list() == [49, 46, 49, 49, 49]
-    assert np.allclose(glow.y_transpose_x.to_numpy(),
-                       np.nan_to_num(phenotype_df.to_numpy().T) @ genotype_df_w_removed_sample[0].array)
     assert np.allclose(glow.sum_x.to_numpy(),
                        (~np.isnan(phenotype_df.to_numpy())).T @ genotype_df_w_removed_sample[0].array)
-    assert regression_results_equal(glow.drop(["n","sum_x","y_transpose_x"], axis=1), baseline)
+    assert np.allclose(glow.sum_y.to_numpy(), np.nansum(phenotype_df.to_numpy(), axis=0))
+    assert np.allclose(glow.y_transpose_x.to_numpy(),
+                       np.nan_to_num(phenotype_df.to_numpy().T) @ genotype_df_w_removed_sample[0].array)
 
 
 @pytest.mark.min_spark('3')
