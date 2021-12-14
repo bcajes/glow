@@ -141,7 +141,9 @@ def logistic_regression(genotype_df: DataFrame,
             if offset_df.index.nlevels == 1:  # Indexed by sample id
                 offset_df = offset_df.reindex(phenotype_df.index)
             elif offset_df.index.nlevels == 2:  # Indexed by sample id and contig
-                offset_df = offset_df[offset_df.index.get_level_values(0).isin(phenotype_df.index)]
+                unique_contigs = offset_df.index.unique(level=1).sort_values()
+                new_index = pd.MultiIndex.from_product([phenotype_df.index, unique_contigs])
+                offset_df = offset_df.reindex(new_index)
 
     C = covariate_df.to_numpy(dt, copy=True)
     if add_intercept:
