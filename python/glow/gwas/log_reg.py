@@ -131,6 +131,11 @@ def logistic_regression(genotype_df: DataFrame,
             StructField('sum_y', sql_type),
             StructField('y_transpose_x', sql_type)
         ])
+        if correction == correction_approx_firth:
+            result_fields += [
+                StructField('chisq_uncorrected', sql_type),
+                StructField('pvalue_uncorrected', sql_type)
+            ]
 
     result_struct = gwas_fx._output_schema(genotype_df.schema.fields, result_fields)
 
@@ -367,6 +372,9 @@ def _logistic_regression_inner(
 
             out_df['effect'] = np.nan
             out_df['stderror'] = np.nan
+            if verbose_output:
+                out_df['chisq_uncorrected'] = out_df['chisq'].copy()
+                out_df['pvalue_uncorrected'] = out_df['pvalue'].copy()
             for correction_idx in correction_indices:
                 snp_idx = correction_idx % X.shape[1]
                 pheno_idx = int(correction_idx / X.shape[1])
