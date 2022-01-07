@@ -342,10 +342,6 @@ def _logistic_regression_inner(
         out_df["sum_y"] = list(np.ravel(Y_for_verbose_output.T @ np.ones(X.shape)))
         out_df["y_transpose_x"] = list(np.ravel(Y_for_verbose_output.T @ X))
 
-    # For approximate Firth correction, we perform a linear residualization
-    if correction == correction_approx_firth:
-        X = gwas_fx._residualize_in_place(X, Q)
-
     with oe.shared_intermediates():
         X_res = _logistic_residualize(X, C, Y_mask, log_reg_state.gamma, log_reg_state.inv_CtGammaC)
         num = gwas_fx._einsum('sgp,sp->pg', X_res, log_reg_state.Y_res)**2
@@ -364,8 +360,11 @@ def _logistic_regression_inner(
                      (out_df['y_transpose_x'] >= y_transpose_x_thresholds[0]) & \
                      (out_df['y_transpose_x'] <= y_transpose_x_thresholds[1]) )[0]
         ) if verbose_output else list(np.where(out_df['pvalue'] < pvalue_threshold)[0]))
-        #from pdb_clone import pdb;pdb.set_trace_remote()
+
         if correction == correction_approx_firth:
+            # For approximate Firth correction, we perform a linear residualization
+            X = gwas_fx._residualize_in_place(X, Q)
+
             out_df['effect'] = np.nan
             out_df['stderror'] = np.nan
             for correction_idx in correction_indices:
